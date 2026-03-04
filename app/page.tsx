@@ -16,6 +16,7 @@ import { AlertsTable } from "@/components/dashboard/alerts-table";
 import { AddTransactionDialog } from "@/components/dashboard/add-transaction-dialog";
 import { CreateAlertDialog } from "@/components/dashboard/create-alert-dialog";
 import { StockPreviewDialog } from "@/components/dashboard/stock-preview-dialog";
+import { TransactionHistoryDrawer } from "@/components/dashboard/transaction-history-drawer";
 import { EmptyState } from "@/components/dashboard/empty-states";
 import {
   BalanceSkeleton,
@@ -52,6 +53,9 @@ export default function Dashboard() {
 
   // Create alert
   const [createAlertOpen, setCreateAlertOpen] = useState(false);
+
+  // Transaction history
+  const [historyOpen, setHistoryOpen] = useState(false);
 
   // Theme
   const { theme } = useTheme();
@@ -187,8 +191,15 @@ export default function Dashboard() {
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
             <div className="lg:col-span-2">
               <PortfolioChart
-                tickers={holdings.map((h) => h.ticker)}
-                totalInvested={summary?.totalInvested ?? 0}
+                holdings={holdings.map((h) => ({
+                  ticker: h.ticker,
+                  totalShares: h.totalShares,
+                  type: h.type,
+                  avgCostUsd: h.avgCostUsd,
+                  cedearRatio: h.cedearRatio
+                    ? parseInt(h.cedearRatio.split(":")[0], 10) || 1
+                    : 1,
+                }))}
                 firstTransactionDate={
                   holdings.reduce((earliest, h) => {
                     if (!h.firstBuyDate) return earliest;
@@ -272,15 +283,25 @@ export default function Dashboard() {
                   + Create alert
                 </button>
               ) : (
-                <button
-                  onClick={() => {
-                    setPrefillTicker("");
-                    setAddTxOpen(true);
-                  }}
-                  className="btn-primary text-xs font-medium px-3.5 py-2 rounded-lg"
-                >
-                  + Add transaction
-                </button>
+                <div className="flex items-center gap-2">
+                  {activeTab === "portfolio" && (
+                    <button
+                      onClick={() => setHistoryOpen(true)}
+                      className="text-xs font-medium px-3.5 py-2 rounded-lg bg-background-secondary border border-border text-foreground hover:bg-surface-hover transition-colors"
+                    >
+                      History
+                    </button>
+                  )}
+                  <button
+                    onClick={() => {
+                      setPrefillTicker("");
+                      setAddTxOpen(true);
+                    }}
+                    className="btn-primary text-xs font-medium px-3.5 py-2 rounded-lg"
+                  >
+                    + Add transaction
+                  </button>
+                </div>
               )}
             </div>
 
@@ -367,6 +388,12 @@ export default function Dashboard() {
       <CreateAlertDialog
         open={createAlertOpen}
         onOpenChange={setCreateAlertOpen}
+        userId={userId}
+      />
+
+      <TransactionHistoryDrawer
+        open={historyOpen}
+        onOpenChange={setHistoryOpen}
         userId={userId}
       />
     </div>

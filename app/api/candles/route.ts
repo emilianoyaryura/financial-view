@@ -56,7 +56,7 @@ export async function GET(request: NextRequest) {
       headers: {
         "User-Agent": "Mozilla/5.0",
       },
-      next: { revalidate: 300 },
+      next: { revalidate: 30 },
     });
 
     if (!response.ok) {

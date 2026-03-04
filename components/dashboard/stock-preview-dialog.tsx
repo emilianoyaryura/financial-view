@@ -23,7 +23,10 @@ import {
 import { useQuote } from "@/lib/hooks/use-quote";
 import { useCandles } from "@/lib/hooks/use-candles";
 import { useFundamentals } from "@/lib/hooks/use-fundamentals";
-import { useTransactionsByTicker } from "@/lib/hooks/use-transactions";
+import {
+  useTransactionsByTicker,
+  useDeleteTransaction,
+} from "@/lib/hooks/use-transactions";
 import { useCedearRatios } from "@/lib/hooks/use-cedear-ratios";
 import { cn } from "@/lib/cn";
 import { formatCurrency, formatPercent, formatChange } from "@/lib/utils/format";
@@ -76,6 +79,7 @@ export function StockPreviewDialog({
     open ? userId : null,
     open ? ticker : ""
   );
+  const deleteTransaction = useDeleteTransaction(userId);
   const { ratioMap: dbRatioMap, hasData: hasDbRatios } = useCedearRatios();
 
   // Prefer DB ratio, fall back to static
@@ -84,11 +88,13 @@ export function StockPreviewDialog({
   const cedearInfo = dbEntry
     ? { ticker, name: dbEntry.name, ratio: dbEntry.ratio, market: dbEntry.market ?? "" }
     : staticEntry ?? null;
-  // Determine chart color based on period variation (start vs end of candle data)
+  // Chart color: based on the period selected (start vs end of candle data)
   const periodReturn = candles && candles.length >= 2
     ? ((candles[candles.length - 1].close - candles[0].close) / candles[0].close) * 100
     : null;
-  const isPositive = periodReturn !== null ? periodReturn >= 0 : (quote?.changePercent ?? 0) >= 0;
+  const isChartPositive = periodReturn !== null ? periodReturn >= 0 : (quote?.changePercent ?? 0) >= 0;
+  // Day change color: always based on daily variation, independent of chart period
+  const isDayPositive = (quote?.changePercent ?? 0) >= 0;
   const hasTransactions = transactions && transactions.length > 0;
 
   // 52-week position
@@ -141,7 +147,7 @@ export function StockPreviewDialog({
                         <p
                           className={cn(
                             "text-xs font-mono",
-                            isPositive ? "text-positive" : "text-negative"
+                            isDayPositive ? "text-positive" : "text-negative"
                           )}
                         >
                           {formatChange(quote.change)} (
@@ -163,7 +169,7 @@ export function StockPreviewDialog({
                       <AreaChart data={candles}>
                         <defs>
                           <linearGradient
-                            id={`preview-${period}-${isPositive}`}
+                            id={`preview-${period}-${isChartPositive}`}
                             x1="0"
                             y1="0"
                             x2="0"
@@ -171,12 +177,12 @@ export function StockPreviewDialog({
                           >
                             <stop
                               offset="5%"
-                              stopColor={isPositive ? "var(--positive)" : "var(--negative)"}
+                              stopColor={isChartPositive ? "var(--positive)" : "var(--negative)"}
                               stopOpacity={0.15}
                             />
                             <stop
                               offset="95%"
-                              stopColor={isPositive ? "var(--positive)" : "var(--negative)"}
+                              stopColor={isChartPositive ? "var(--positive)" : "var(--negative)"}
                               stopOpacity={0}
                             />
                           </linearGradient>
@@ -205,9 +211,9 @@ export function StockPreviewDialog({
                         <Area
                           type="monotone"
                           dataKey="close"
-                          stroke={isPositive ? "var(--positive)" : "var(--negative)"}
+                          stroke={isChartPositive ? "var(--positive)" : "var(--negative)"}
                           strokeWidth={1.5}
-                          fill={`url(#preview-${period}-${isPositive})`}
+                          fill={`url(#preview-${period}-${isChartPositive})`}
                           dot={false}
                           animationDuration={400}
                         />
@@ -244,7 +250,7 @@ export function StockPreviewDialog({
                     <span
                       className={cn(
                         "text-xs font-mono font-medium",
-                        isPositive ? "text-positive" : "text-negative"
+                        isChartPositive ? "text-positive" : "text-negative"
                       )}
                     >
                       {formatPercent(periodReturn)}
@@ -369,7 +375,21 @@ export function StockPreviewDialog({
                 </div>
                 <div className="px-5 pb-5 space-y-0">
                   {transactions.map((tx) => (
-                    <TransactionItem key={tx.id} tx={tx} />
+                    <TransactionItem
+                      key={tx.id}
+                      tx={tx}
+                      onDelete={(transactionId, holdingId) =>
+                        deleteTransaction.mutate(
+                          { transactionId, holdingId },
+                          {
+                            onError: () => {
+                              // Toast handled by global error or we can add one
+                            },
+                          }
+                        )
+                      }
+                      isDeleting={deleteTransaction.isPending}
+                    />
                   ))}
                 </div>
               </div>
@@ -381,10 +401,44 @@ export function StockPreviewDialog({
   );
 }
 
-function TransactionItem({ tx }: { tx: TransactionRow }) {
+function TransactionItem({
+  tx,
+  onDelete,
+  isDeleting,
+}: {
+  tx: TransactionRow;
+  onDelete: (transactionId: string, holdingId: string) => void;
+  isDeleting: boolean;
+}) {
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const isBuy = tx.action === "buy";
+
+  if (confirmDelete) {
+    return (
+      <div className="flex items-center justify-between py-2.5 border-b border-border/50 last:border-b-0">
+        <span className="text-xs text-foreground-tertiary">Delete this transaction?</span>
+        <div className="flex items-center gap-1.5">
+          <button
+            onClick={() => setConfirmDelete(false)}
+            className="text-[11px] px-2 py-1 rounded text-foreground-tertiary hover:text-foreground transition-colors"
+            disabled={isDeleting}
+          >
+            Cancel
+          </button>
+          <button
+            onClick={() => onDelete(tx.id, tx.holding_id)}
+            className="text-[11px] px-2 py-1 rounded bg-negative/10 text-negative hover:bg-negative/20 transition-colors"
+            disabled={isDeleting}
+          >
+            {isDeleting ? "Deleting..." : "Delete"}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="flex items-start gap-3 py-2.5 border-b border-border/50 last:border-b-0">
+    <div className="flex items-start gap-3 py-2.5 border-b border-border/50 last:border-b-0 group">
       <div
         className={cn(
           "w-5 h-5 rounded flex items-center justify-center text-[10px] font-mono font-medium mt-0.5 shrink-0",
@@ -398,6 +452,16 @@ function TransactionItem({ tx }: { tx: TransactionRow }) {
           <span className="text-xs font-medium text-foreground">
             {tx.shares} shares @ {formatCurrency(tx.price_per_share, tx.currency as "USD" | "ARS")}
           </span>
+          <button
+            onClick={() => setConfirmDelete(true)}
+            className="opacity-0 group-hover:opacity-100 text-foreground-tertiary hover:text-negative transition-all ml-1 shrink-0"
+            title="Delete transaction"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
         </div>
         <div className="flex items-center justify-between mt-0.5">
           <span className="text-[11px] text-foreground-tertiary">

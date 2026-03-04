@@ -1,17 +1,19 @@
 import { NextResponse } from "next/server";
 import type { DollarRate, DollarRates } from "@/lib/types";
 
+export const dynamic = "force-dynamic";
+
 export async function GET() {
   try {
     const [oficialRes, mepRes, blueRes] = await Promise.all([
       fetch("https://dolarapi.com/v1/dolares/oficial", {
-        next: { revalidate: 120 },
+        cache: "no-store",
       }),
       fetch("https://dolarapi.com/v1/dolares/bolsa", {
-        next: { revalidate: 120 },
+        cache: "no-store",
       }),
       fetch("https://dolarapi.com/v1/dolares/blue", {
-        next: { revalidate: 120 },
+        cache: "no-store",
       }),
     ]);
 

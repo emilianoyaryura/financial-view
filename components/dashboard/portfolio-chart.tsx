@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState } from "react";
 import {
   AreaChart,
   Area,
@@ -12,12 +12,12 @@ import {
 } from "recharts";
 import { cn } from "@/lib/cn";
 import { formatCurrency, formatPercent } from "@/lib/utils/format";
-import { useCandles } from "@/lib/hooks/use-candles";
+import { usePortfolioCandles } from "@/lib/hooks/use-candles";
+import type { HoldingForChart } from "@/lib/hooks/use-candles";
 import type { ChartPeriod } from "@/lib/types";
 
 interface PortfolioChartProps {
-  tickers: string[];
-  totalInvested: number;
+  holdings: HoldingForChart[];
   firstTransactionDate?: string | null;
 }
 
@@ -31,68 +31,21 @@ const PERIODS: { label: string; value: ChartPeriod }[] = [
   { label: "MAX", value: "MAX" },
 ];
 
-export function PortfolioChart({ tickers, totalInvested, firstTransactionDate }: PortfolioChartProps) {
+export function PortfolioChart({ holdings, firstTransactionDate }: PortfolioChartProps) {
   const [period, setPeriod] = useState<ChartPeriod>("3M");
 
-  // Always fetch SPY for S&P 500 comparison
-  const { data: spyCandles, isLoading: spyLoading } = useCandles("SPY", period);
-
-  // Portfolio proxy: use the first ticker
-  const primaryTicker = tickers.length > 0 ? tickers[0] : "";
-  const { data: primaryCandles, isLoading: primaryLoading } = useCandles(
-    primaryTicker,
-    period
+  const { data: chartData, isLoading } = usePortfolioCandles(
+    holdings,
+    period,
+    firstTransactionDate
   );
 
-  const chartData = useMemo(() => {
-    if (!primaryCandles || primaryCandles.length === 0) return [];
-
-    // Filter candles to start from firstTransactionDate if set
-    let filteredCandles = primaryCandles;
-    let filteredSpy = spyCandles ?? [];
-    if (firstTransactionDate) {
-      filteredCandles = primaryCandles.filter((c) => c.date >= firstTransactionDate);
-      filteredSpy = filteredSpy.filter((c) => c.date >= firstTransactionDate);
-    }
-    if (filteredCandles.length === 0) return [];
-
-    const startPrice = filteredCandles[0].close;
-
-    // Build SPY lookup — index-based for reliable alignment
-    const spyMap = new Map(filteredSpy.map((c) => [c.date, c.close]));
-    const spyStart = filteredSpy[0]?.close ?? 1;
-
-    return filteredCandles.map((candle, idx) => {
-      const portfolioReturn =
-        ((candle.close - startPrice) / startPrice) * 100;
-
-      // Try exact date match first, then fall back to same index
-      let spyClose = spyMap.get(candle.date);
-      if (spyClose == null && filteredSpy.length > 0) {
-        const fallbackIdx = Math.min(idx, filteredSpy.length - 1);
-        spyClose = filteredSpy[fallbackIdx].close;
-      }
-      const spyReturn =
-        spyClose != null
-          ? ((spyClose - spyStart) / spyStart) * 100
-          : null;
-
-      return {
-        date: candle.date,
-        portfolio: Math.round(portfolioReturn * 100) / 100,
-        sp500: spyReturn !== null ? Math.round(spyReturn * 100) / 100 : null,
-        rawValue: candle.close,
-      };
-    });
-  }, [primaryCandles, spyCandles, firstTransactionDate]);
-
-  const lastPoint = chartData[chartData.length - 1];
+  const lastPoint = chartData?.[chartData.length - 1];
   const periodReturn = lastPoint?.portfolio ?? 0;
   const sp500Return = lastPoint?.sp500 ?? 0;
   const isPositive = periodReturn >= 0;
-  const isLoading = primaryLoading || spyLoading;
 
-  const hasNoTickers = tickers.length === 0;
+  const hasNoHoldings = holdings.length === 0;
 
   // Unique gradient IDs
   const gradientId = `portfolio-${period}-${isPositive ? "up" : "down"}`;
@@ -104,7 +57,7 @@ export function PortfolioChart({ tickers, totalInvested, firstTransactionDate }:
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-4">
           <h3 className="text-sm font-medium text-foreground">Performance</h3>
-          {!isLoading && chartData.length > 0 && (
+          {!isLoading && chartData && chartData.length > 0 && (
             <div className="flex items-center gap-3">
               <div className="flex items-center gap-1.5">
                 <div
@@ -168,13 +121,13 @@ export function PortfolioChart({ tickers, totalInvested, firstTransactionDate }:
 
       {/* Chart */}
       <div className="h-[420px] -ml-2">
-        {hasNoTickers ? (
+        {hasNoHoldings ? (
           <div className="w-full h-full flex items-center justify-center text-sm text-foreground-tertiary">
             Add holdings to see performance
           </div>
         ) : isLoading ? (
           <div className="w-full h-full bg-background-secondary rounded-lg animate-pulse-subtle" />
-        ) : chartData.length > 0 ? (
+        ) : chartData && chartData.length > 0 ? (
           <ResponsiveContainer width="100%" height="100%">
             <AreaChart data={chartData}>
               <defs>
@@ -278,7 +231,7 @@ function ChartTooltip({
       date: string;
       portfolio: number;
       sp500: number | null;
-      rawValue: number;
+      portfolioValue: number;
     };
   }>;
 }) {
@@ -323,9 +276,9 @@ function ChartTooltip({
           </div>
         )}
         <div className="pt-1 border-t border-border mt-1">
-          <span className="text-foreground-tertiary">Price </span>
+          <span className="text-foreground-tertiary">Value </span>
           <span className="font-mono text-foreground">
-            {formatCurrency(data.rawValue)}
+            {formatCurrency(data.portfolioValue)}
           </span>
         </div>
       </div>

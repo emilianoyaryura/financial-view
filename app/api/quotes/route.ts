@@ -27,7 +27,7 @@ export async function GET(request: NextRequest) {
         try {
           const response = await fetch(
             `https://finnhub.io/api/v1/quote?symbol=${encodeURIComponent(ticker)}&token=${FINNHUB_API_KEY}`,
-            { next: { revalidate: 60 } }
+            { next: { revalidate: 15 } }
           );
 
           if (!response.ok) return null;
